@@ -28,7 +28,7 @@ async function fetchStockPrice(symbol) {
     await page.waitForSelector(priceSelector);
 
     const price = await page.$eval(priceSelector, (el) =>
-      el.textContent.trim()
+      el.textContent.trim(),
     );
     logger.log(`Price for ${symbol}: ${price}`);
     await browser.close();
@@ -101,14 +101,14 @@ exports.updateStockPricesOnRequest = functions.https.onRequest(
     } catch (error) {
       logger.error(
         "Error in HTTP-triggered stock price update:",
-        error.message
+        error.message,
       );
       res.status(500).send("Failed to update stock prices.");
     }
-  }
+  },
 );
 
-// Cloud Function: Scheduled trigger (Every day at 2:45 PM)
+// Cloud Function: Scheduled trigger
 exports.updateStockPricesDaily = functions.pubsub
   .schedule(WEEKDAY_CRON)
   .timeZone("Asia/Colombo")
