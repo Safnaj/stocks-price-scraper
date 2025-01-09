@@ -1,14 +1,24 @@
-const functions = require("firebase-functions/v1");
-const logger = require("firebase-functions/logger");
-const puppeteer = require("puppeteer");
-const { google } = require("googleapis");
-const SERVICE_ACCOUNT = require("./service-account-key.json");
+import puppeteer from "puppeteer";
+import admin from "firebase-admin";
+import { logger } from "firebase-functions/v2";
+import { onRequest } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { google } from "googleapis";
+import { readFileSync } from "fs";
 
-const SHEET_ID = "1D8F0FZkYYnaL42hzO1DISiSI_EXD4tI0-dKl3omkgjw";
+admin.initializeApp();
+
+const SERVICE_ACCOUNT = JSON.parse(
+  readFileSync('./service-account-key.json', "utf-8")
+);
+
+const SHEET_ID = process.env.SHEET_ID;
+const CRON_SCHEDULE = process.env.CRON_SCHEDULE;
+
+const TIMEZONE = "Asia/Colombo";
 const TIMESTAMP = new Date().toLocaleString("en-US", {
-  timeZone: "Asia/Colombo",
+  timeZone: TIMEZONE,
 });
-const WEEKDAY_CRON = "45 14 * * 1-5";
 
 const sheets = google.sheets("v4");
 const auth = new google.auth.GoogleAuth({
@@ -16,9 +26,12 @@ const auth = new google.auth.GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
+// Fetch Stock Price
 async function fetchStockPrice(symbol) {
   try {
-    const browser = await puppeteer.launch({ headless: true });
+    const browser = await puppeteer.launch({
+      headless: true,
+    });
     const page = await browser.newPage();
 
     const url = `https://www.tradingview.com/symbols/CSELK-${symbol}/`;
@@ -28,9 +41,9 @@ async function fetchStockPrice(symbol) {
     await page.waitForSelector(priceSelector);
 
     const price = await page.$eval(priceSelector, (el) =>
-      el.textContent.trim(),
+      el.textContent.trim()
     );
-    logger.log(`Price for ${symbol}: ${price}`);
+    logger.info(`Price for ${symbol}: ${price}`);
     await browser.close();
     return parseFloat(price);
   } catch (error) {
@@ -39,9 +52,10 @@ async function fetchStockPrice(symbol) {
   }
 }
 
+// Update Stock Prices
 async function updateStockPrices() {
   try {
-    logger.log("Fetching stock symbols...");
+    logger.info("Fetching stock symbols...");
     const authClient = await auth.getClient();
     const response = await sheets.spreadsheets.values.get({
       auth: authClient,
@@ -85,38 +99,36 @@ async function updateStockPrices() {
       },
     });
 
-    logger.log("Stock prices updated successfully.");
+    logger.info("Stock prices updated successfully.");
   } catch (error) {
     logger.error("Error updating stock prices:", error.message);
   }
 }
 
-// Cloud Function: HTTP trigger
-exports.updateStockPricesOnRequest = functions.https.onRequest(
-  async (req, res) => {
-    try {
-      logger.log("Received request to update stock prices.");
-      await updateStockPrices();
-      res.status(200).send("Stock prices updated successfully!");
-    } catch (error) {
-      logger.error(
-        "Error in HTTP-triggered stock price update:",
-        error.message,
-      );
-      res.status(500).send("Failed to update stock prices.");
-    }
-  },
-);
+// Cloud Function: HTTP Trigger
+export const updateStockPricesOnRequest = onRequest(async (req, res) => {
+  try {
+    logger.info("Received request to update stock prices.");
+    await updateStockPrices();
+    res.status(200).send("Stock prices updated successfully!");
+  } catch (error) {
+    logger.error("Error in HTTP-triggered stock price update:", error.message);
+    res.status(500).send("Failed to update stock prices.");
+  }
+});
 
-// Cloud Function: Scheduled trigger
-exports.updateStockPricesDaily = functions.pubsub
-  .schedule(WEEKDAY_CRON)
-  .timeZone("Asia/Colombo")
-  .onRun(async () => {
+// Cloud Function: Scheduled Trigger
+export const updateStockPricesDaily = onSchedule(
+  {
+    schedule: CRON_SCHEDULE,
+    timeZone: TIMEZONE,
+  },
+  async () => {
     try {
-      logger.log("Triggered scheduled stock price update.");
+      logger.info("Triggered scheduled stock price update.");
       await updateStockPrices();
     } catch (error) {
       logger.error("Error in scheduled stock price update:", error.message);
     }
-  });
+  }
+);
