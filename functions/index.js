@@ -1,14 +1,18 @@
 const functions = require("firebase-functions/v1");
 const logger = require("firebase-functions/logger");
+const admin = require("firebase-admin");
 const puppeteer = require("puppeteer");
 const { google } = require("googleapis");
 const SERVICE_ACCOUNT = require("./service-account-key.json");
 
+const WEEKDAY_CRON = "45 14 * * 1-5"; // Weekdays at 2:45 PM
+const TIMEZONE = "Asia/Colombo";
 const SHEET_ID = "1D8F0FZkYYnaL42hzO1DISiSI_EXD4tI0-dKl3omkgjw";
 const TIMESTAMP = new Date().toLocaleString("en-US", {
-  timeZone: "Asia/Colombo",
+  timeZone: TIMEZONE,
 });
-const WEEKDAY_CRON = "45 14 * * 1-5";
+
+admin.initializeApp();
 
 const sheets = google.sheets("v4");
 const auth = new google.auth.GoogleAuth({
@@ -111,7 +115,7 @@ exports.updateStockPricesOnRequest = functions.https.onRequest(
 // Cloud Function: Scheduled trigger
 exports.updateStockPricesDaily = functions.pubsub
   .schedule(WEEKDAY_CRON)
-  .timeZone("Asia/Colombo")
+  .timeZone(TIMEZONE)
   .onRun(async () => {
     try {
       logger.log("Triggered scheduled stock price update.");
