@@ -9,11 +9,11 @@ import { readFileSync } from "fs";
 admin.initializeApp();
 
 const SERVICE_ACCOUNT = JSON.parse(
-  readFileSync('./service-account-key.json', "utf-8")
+  readFileSync("./service-account-key.json", "utf-8"),
 );
 
 const SHEET_ID = process.env.SHEET_ID;
-const CRON_SCHEDULE = process.env.CRON_SCHEDULE;
+const CRON_SCHEDULE = "45 14 * * 1-5"; // Every weekday at 2:45 PM
 
 const TIMEZONE = "Asia/Colombo";
 const TIMESTAMP = new Date().toLocaleString("en-US", {
@@ -41,7 +41,7 @@ async function fetchStockPrice(symbol) {
     await page.waitForSelector(priceSelector);
 
     const price = await page.$eval(priceSelector, (el) =>
-      el.textContent.trim()
+      el.textContent.trim(),
     );
     logger.info(`Price for ${symbol}: ${price}`);
     await browser.close();
@@ -130,5 +130,5 @@ export const updateStockPricesDaily = onSchedule(
     } catch (error) {
       logger.error("Error in scheduled stock price update:", error.message);
     }
-  }
+  },
 );
