@@ -14,6 +14,7 @@ const SERVICE_ACCOUNT = JSON.parse(
 
 const SHEET_ID = process.env.SHEET_ID;
 const CRON_SCHEDULE = "45 14 * * 1-5"; // Every weekday at 2:45 PM
+const CLOUD_MEMORY = "1GiB";
 
 const TIMEZONE = "Asia/Colombo";
 const TIMESTAMP = new Date().toLocaleString("en-US", {
@@ -78,7 +79,7 @@ async function updateStockPrices() {
     }
 
     // Update Stock Prices
-    await sheets.spreadsheets.values.update({
+    const updateResponse = await sheets.spreadsheets.values.update({
       auth: authClient,
       spreadsheetId: SHEET_ID,
       range: "Sheet1!H2:H",
@@ -89,7 +90,7 @@ async function updateStockPrices() {
     });
 
     // Update Timestamps
-    await sheets.spreadsheets.values.update({
+    const timestampResponse = await sheets.spreadsheets.values.update({
       auth: authClient,
       spreadsheetId: SHEET_ID,
       range: "Sheet1!L2:L",
@@ -99,6 +100,13 @@ async function updateStockPrices() {
       },
     });
 
+    if (
+      updateResponse.status !== 200 ||
+      timestampResponse.status !== 200
+    ) {
+      throw new Error("Failed to update the spreadsheet");
+    }
+
     logger.info("Stock prices updated successfully.");
   } catch (error) {
     logger.error("Error updating stock prices:", error.message);
@@ -106,22 +114,28 @@ async function updateStockPrices() {
 }
 
 // Cloud Function: HTTP Trigger
-export const updateStockPricesOnRequest = onRequest(async (req, res) => {
-  try {
-    logger.info("Received request to update stock prices.");
-    await updateStockPrices();
-    res.status(200).send("Stock prices updated successfully!");
-  } catch (error) {
-    logger.error("Error in HTTP-triggered stock price update:", error.message);
-    res.status(500).send("Failed to update stock prices.");
-  }
-});
+export const updateStockPricesOnRequest = onRequest(
+  {
+    memory: CLOUD_MEMORY,
+  },
+  async (req, res) => {
+    try {
+      logger.info("Received request to update stock prices.");
+      await updateStockPrices();
+      res.status(200).send("Stock prices updated successfully!");
+    } catch (error) {
+      logger.error("Error triggered stock price update:", error.message);
+      res.status(500).send("Failed to update stock prices.");
+    }
+  },
+);
 
 // Cloud Function: Scheduled Trigger
 export const updateStockPricesDaily = onSchedule(
   {
     schedule: CRON_SCHEDULE,
     timeZone: TIMEZONE,
+    memory: CLOUD_MEMORY,
   },
   async () => {
     try {
