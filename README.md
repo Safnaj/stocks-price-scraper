@@ -47,11 +47,12 @@ This project fetches stock prices from the Colombo Stock Exchange and updates th
 
 ## Firebase Free Tier
 
-- Firebase offers **400,000 GB-seconds** per month for free.
-- A 1 GB function running for 30 seconds consumes **30 GB-seconds**.
+- Firebase provides **400,000 GB-seconds** of free compute time per month.
+- A 1 GB function running for 60 seconds consumes **60 GB-seconds** per invocation.
 - Scheduled to run 5 times per week (Monday to Friday).
+- A month typically has 4 weeks, so the function runs about 20 times per month.
 - Monthly consumption:  
-  `30 GB-seconds × 5 days × ~4 weeks = ~600 GB-seconds`.  
+  `60 GB-seconds × 20 invocations = ~600 GB-seconds`.  
   This is well within the 400,000 GB-seconds free tier.
 
 
