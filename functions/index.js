@@ -9,12 +9,11 @@ import { readFileSync } from "fs";
 admin.initializeApp();
 
 const SERVICE_ACCOUNT = JSON.parse(
-  readFileSync("./service-account-key.json", "utf-8"),
+  readFileSync("./service-account-key.json", "utf-8")
 );
 
 const SHEET_ID = process.env.SHEET_ID;
 const CRON_SCHEDULE = "45 14 * * 1-5"; // Every weekday at 2:45 PM
-const CLOUD_MEMORY = "1GiB";
 
 const TIMEZONE = "Asia/Colombo";
 const TIMESTAMP = new Date().toLocaleString("en-US", {
@@ -29,27 +28,30 @@ const auth = new google.auth.GoogleAuth({
 
 // Fetch Stock Price
 async function fetchStockPrice(symbol) {
+  let browser;
   try {
-    const browser = await puppeteer.launch({
-      headless: true,
-    });
+    browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
 
     const url = `https://www.tradingview.com/symbols/CSELK-${symbol}/`;
-    await page.goto(url, { waitUntil: "networkidle2" });
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
 
     const priceSelector = ".lastContainer-JWoJqCpY .js-symbol-last > span";
     await page.waitForSelector(priceSelector);
 
     const price = await page.$eval(priceSelector, (el) =>
-      el.textContent.trim(),
+      el.textContent.trim()
     );
+
     logger.info(`Price for ${symbol}: ${price}`);
-    await browser.close();
     return parseFloat(price);
   } catch (error) {
-    logger.error(`Error fetching price for ${symbol}:`, error.message);
+    logger.error(`Error fetching price for ${symbol}: ${error.message}`);
     return null;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
@@ -64,48 +66,34 @@ async function updateStockPrices() {
       range: "Sheet1!B2:B",
     });
 
-    const symbols = response.data.values.flat();
-    const updates = [];
-    const timestamps = [];
-
-    for (const symbol of symbols) {
-      try {
-        const price = await fetchStockPrice(symbol);
-        updates.push([price]);
-      } catch (error) {
-        updates.push([symbol, "Error fetching price"]);
-      }
-      timestamps.push([TIMESTAMP]);
+    const symbols = response.data.values?.flat() || [];
+    if (symbols.length === 0) {
+      logger.warn("No stock symbols found.");
+      return;
     }
 
+    // Fetch all stock prices in parallel
+    const prices = await Promise.all(symbols.map(fetchStockPrice));
+    const updates = prices.map((price) => [price ?? "Error fetching price"]);
+    const timestamps = symbols.map(() => [TIMESTAMP]);
+
     // Update Stock Prices
-    const updateResponse = await sheets.spreadsheets.values.update({
+    await sheets.spreadsheets.values.update({
       auth: authClient,
       spreadsheetId: SHEET_ID,
       range: "Sheet1!H2:H",
       valueInputOption: "RAW",
-      requestBody: {
-        values: updates,
-      },
+      requestBody: { values: updates },
     });
 
     // Update Timestamps
-    const timestampResponse = await sheets.spreadsheets.values.update({
+    await sheets.spreadsheets.values.update({
       auth: authClient,
       spreadsheetId: SHEET_ID,
       range: "Sheet1!L2:L",
       valueInputOption: "RAW",
-      requestBody: {
-        values: timestamps,
-      },
+      requestBody: { values: timestamps },
     });
-
-    if (
-      updateResponse.status !== 200 ||
-      timestampResponse.status !== 200
-    ) {
-      throw new Error("Failed to update the spreadsheet");
-    }
 
     logger.info("Stock prices updated successfully.");
   } catch (error) {
@@ -115,9 +103,7 @@ async function updateStockPrices() {
 
 // Cloud Function: HTTP Trigger
 export const updateStockPricesOnRequest = onRequest(
-  {
-    memory: CLOUD_MEMORY,
-  },
+  { memory: "1GiB" },
   async (req, res) => {
     try {
       logger.info("Received request to update stock prices.");
@@ -127,7 +113,7 @@ export const updateStockPricesOnRequest = onRequest(
       logger.error("Error triggered stock price update:", error.message);
       res.status(500).send("Failed to update stock prices.");
     }
-  },
+  }
 );
 
 // Cloud Function: Scheduled Trigger
@@ -135,7 +121,7 @@ export const updateStockPricesDaily = onSchedule(
   {
     schedule: CRON_SCHEDULE,
     timeZone: TIMEZONE,
-    memory: CLOUD_MEMORY,
+    memory: "1GiB",
   },
   async () => {
     try {
@@ -144,5 +130,5 @@ export const updateStockPricesDaily = onSchedule(
     } catch (error) {
       logger.error("Error in scheduled stock price update:", error.message);
     }
-  },
+  }
 );
