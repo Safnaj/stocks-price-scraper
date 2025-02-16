@@ -9,7 +9,7 @@ import { readFileSync } from "fs";
 admin.initializeApp();
 
 const SERVICE_ACCOUNT = JSON.parse(
-  readFileSync("./service-account-key.json", "utf-8")
+  readFileSync("./service-account-key.json", "utf-8"),
 );
 
 const SHEET_ID = process.env.SHEET_ID;
@@ -26,32 +26,61 @@ const auth = new google.auth.GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
+let browser;
+async function initBrowser() {
+  if (!browser) {
+    logger.info("Launching Puppeteer browser...");
+    browser = await puppeteer.launch({ headless: true });
+  }
+}
+
+async function closeBrowser() {
+  if (browser) {
+    logger.info("Closing Puppeteer browser...");
+    await browser.close();
+    browser = null;
+  }
+}
+
 // Fetch Stock Price
 async function fetchStockPrice(symbol) {
-  let browser;
   try {
-    browser = await puppeteer.launch({ headless: true });
+    await initBrowser();
     const page = await browser.newPage();
 
     const url = `https://www.tradingview.com/symbols/CSELK-${symbol}/`;
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
     const priceSelector = ".lastContainer-JWoJqCpY .js-symbol-last > span";
-    await page.waitForSelector(priceSelector);
 
-    const price = await page.$eval(priceSelector, (el) =>
-      el.textContent.trim()
-    );
+    let price = null;
+    let attempts = 0;
+
+    while (attempts < 3) {
+      await page.waitForSelector(priceSelector, { timeout: 60000 });
+
+      price = await page.evaluate((selector) => {
+        const el = document.querySelector(selector);
+        return el ? el.textContent.trim() : null;
+      }, priceSelector);
+
+      if (price) break;
+      attempts++;
+      await new Promise((res) => setTimeout(res, 3000));
+    }
+
+    await page.close();
+
+    if (!price) {
+      logger.error(`Error fetching price for ${symbol}`);
+      return null;
+    }
 
     logger.info(`Price for ${symbol}: ${price}`);
     return parseFloat(price);
   } catch (error) {
     logger.error(`Error fetching price for ${symbol}: ${error.message}`);
     return null;
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
 }
 
@@ -66,16 +95,19 @@ async function updateStockPrices() {
       range: "Sheet1!B2:B",
     });
 
-    const symbols = response.data.values?.flat() || [];
-    if (symbols.length === 0) {
-      logger.warn("No stock symbols found.");
-      return;
-    }
+    const symbols = response.data.values.flat();
+    const updates = [];
+    const timestamps = [];
 
-    // Fetch all stock prices in parallel
-    const prices = await Promise.all(symbols.map(fetchStockPrice));
-    const updates = prices.map((price) => [price ?? "Error fetching price"]);
-    const timestamps = symbols.map(() => [TIMESTAMP]);
+    for (const symbol of symbols) {
+      try {
+        const price = await fetchStockPrice(symbol);
+        updates.push([price]);
+      } catch (error) {
+        updates.push([symbol, "Error fetching price"]);
+      }
+      timestamps.push([TIMESTAMP]);
+    }
 
     // Update Stock Prices
     await sheets.spreadsheets.values.update({
@@ -98,6 +130,8 @@ async function updateStockPrices() {
     logger.info("Stock prices updated successfully.");
   } catch (error) {
     logger.error("Error updating stock prices:", error.message);
+  } finally {
+    await closeBrowser();
   }
 }
 
@@ -113,7 +147,7 @@ export const updateStockPricesOnRequest = onRequest(
       logger.error("Error triggered stock price update:", error.message);
       res.status(500).send("Failed to update stock prices.");
     }
-  }
+  },
 );
 
 // Cloud Function: Scheduled Trigger
@@ -130,5 +164,5 @@ export const updateStockPricesDaily = onSchedule(
     } catch (error) {
       logger.error("Error in scheduled stock price update:", error.message);
     }
-  }
+  },
 );
