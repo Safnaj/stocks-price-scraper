@@ -96,18 +96,20 @@ async function updateStockPrices() {
     });
 
     const symbols = response.data.values.flat();
-    const updates = [];
-    const timestamps = [];
+    const uniqueSymbols = [...new Set(symbols)];
+    const stockPrices = {};
 
-    for (const symbol of symbols) {
+    for (const symbol of uniqueSymbols) {
       try {
         const price = await fetchStockPrice(symbol);
-        updates.push([price]);
+        stockPrices[symbol] = price;
       } catch (error) {
-        updates.push([symbol, "Error fetching price"]);
+        stockPrices[symbol] = null;
       }
-      timestamps.push([TIMESTAMP]);
     }
+
+    const updates = symbols.map((symbol) => [stockPrices[symbol]]);
+    const timestamps = symbols.map(() => [TIMESTAMP]);
 
     // Update Stock Prices
     await sheets.spreadsheets.values.update({
