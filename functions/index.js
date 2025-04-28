@@ -51,7 +51,7 @@ async function fetchStockPrice(symbol) {
     const url = `https://www.tradingview.com/symbols/CSELK-${symbol}/`;
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-    const priceSelector = ".lastContainer-JWoJqCpY .js-symbol-last > span";
+    const priceSelector = ".lastContainer-zoF9r75I .js-symbol-last > span";
 
     let price = null;
     let attempts = 0;
@@ -92,7 +92,7 @@ async function updateStockPrices() {
     const response = await sheets.spreadsheets.values.get({
       auth: authClient,
       spreadsheetId: SHEET_ID,
-      range: "Sheet1!B2:B",
+      range: "Stocks!B2:B",
     });
 
     const symbols = response.data.values.flat();
@@ -115,7 +115,7 @@ async function updateStockPrices() {
     await sheets.spreadsheets.values.update({
       auth: authClient,
       spreadsheetId: SHEET_ID,
-      range: "Sheet1!H2:H",
+      range: "Stocks!H2:H",
       valueInputOption: "RAW",
       requestBody: { values: updates },
     });
@@ -124,7 +124,7 @@ async function updateStockPrices() {
     await sheets.spreadsheets.values.update({
       auth: authClient,
       spreadsheetId: SHEET_ID,
-      range: "Sheet1!L2:L",
+      range: "Stocks!L2:L",
       valueInputOption: "RAW",
       requestBody: { values: timestamps },
     });
