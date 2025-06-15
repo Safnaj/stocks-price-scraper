@@ -55,9 +55,10 @@ async function fetchPrice(symbol) {
     await page.waitForSelector(selector, { timeout: 10000 });
 
     const price = await page.$eval(selector, (el) => el.textContent.trim());
+    logger.info(`Price for ${symbol}: ${price}`);
     return parseFloat(price);
   } catch (err) {
-    logger.error(`Failed to fetch ${symbol}: ${err.message}`);
+    logger.error(`Failed to fetch price for ${symbol}: ${err.message}`);
     return null;
   } finally {
     await page.close();
@@ -72,6 +73,7 @@ async function updateStockPrices() {
   const priceMap = {};
 
   try {
+    logger.info("Launching Puppeteer browser...");
     browser = await puppeteer.launch({ headless: true });
 
     for (const symbol of unique) {
@@ -86,7 +88,7 @@ async function updateStockPrices() {
     await writeToSheet("H", prices);
     await writeToSheet("L", timestamps);
 
-    logger.info("Stock prices updated.");
+    logger.info("Stock prices updated successfully !!");
   } catch (err) {
     logger.error(`Browser error: ${err.message}`);
     const errorValues = symbols.map(() => [null]);
@@ -94,6 +96,7 @@ async function updateStockPrices() {
     await writeToSheet("H", errorValues);
     await writeToSheet("L", errorTimestamps);
   } finally {
+    logger.info("Closing browser...");
     if (browser) await browser.close();
     browser = null;
   }
