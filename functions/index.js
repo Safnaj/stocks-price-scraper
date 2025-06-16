@@ -106,6 +106,7 @@ async function updateStockPrices() {
 export const updateStockPricesOnRequest = onRequest(
   { memory: "1GiB" },
   async (req, res) => {
+    logger.info("HTTP request to update stock prices received");
     await updateStockPrices();
     res.send("Stock prices updated successfully");
   },
@@ -118,5 +119,8 @@ export const updateStockPricesDaily = onSchedule(
     timeZone: TIMEZONE,
     memory: "1GiB",
   },
-  updateStockPrices,
+  async () => {
+    logger.info("Scheduled stock price update triggered");
+    await updateStockPrices();
+  },
 );
