@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer";
+import fetch from "node-fetch";
 import admin from "firebase-admin";
 import { logger } from "firebase-functions/v2";
 import { onRequest } from "firebase-functions/v2/https";
@@ -22,8 +22,6 @@ const auth = new google.auth.GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"],
 });
 
-let browser;
-
 async function fetchSymbols(column) {
   const client = await auth.getClient();
   const res = await sheets.spreadsheets.values.get({
@@ -46,22 +44,28 @@ async function writeToSheet(column, values) {
 }
 
 async function fetchPrice(symbol) {
-  const page = await browser.newPage();
   try {
-    const url = `https://www.tradingview.com/symbols/CSELK-${symbol}/`;
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    const res = await fetch("https://www.cse.lk/api/tradeSummary", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
 
-    const selector = ".lastContainer-zoF9r75I .js-symbol-last > span";
-    await page.waitForSelector(selector, { timeout: 10000 });
+    const data = await res.json();
+    const stock = data.reqTradeSummery.find((s) => s.symbol === symbol);
 
-    const price = await page.$eval(selector, (el) => el.textContent.trim());
-    logger.info(`Price for ${symbol}: ${price}`);
-    return parseFloat(price);
+    if (stock) {
+      logger.info(`Price for ${symbol}: ${stock.closingPrice}`);
+      return stock.closingPrice;
+    } else {
+      logger.warn(`Symbol ${symbol} not found in API`);
+      return null;
+    }
   } catch (err) {
     logger.error(`Failed to fetch price for ${symbol}: ${err.message}`);
     return null;
-  } finally {
-    await page.close();
   }
 }
 
@@ -73,9 +77,7 @@ async function updateStockPrices() {
   const priceMap = {};
 
   try {
-    logger.info("Launching Puppeteer browser...");
-    browser = await puppeteer.launch({ headless: true });
-
+    logger.info("Making API requests to fetch stock prices...");
     for (const symbol of unique) {
       priceMap[symbol] = await fetchPrice(symbol);
     }
@@ -90,15 +92,11 @@ async function updateStockPrices() {
 
     logger.info("Stock prices updated successfully !!");
   } catch (err) {
-    logger.error(`Browser error: ${err.message}`);
+    logger.error(`API error: ${err.message}`);
     const errorValues = symbols.map(() => [null]);
-    const errorTimestamps = symbols.map(() => ["Browser Error"]);
+    const errorTimestamps = symbols.map(() => ["API Error"]);
     await writeToSheet("H", errorValues);
     await writeToSheet("L", errorTimestamps);
-  } finally {
-    logger.info("Closing browser...");
-    if (browser) await browser.close();
-    browser = null;
   }
 }
 
